@@ -5,7 +5,7 @@ import { Settings } from './pages/Settings';
 
 function App() {
   return (
-    <BrowserRouter basename="/what2wear">
+    <BrowserRouter basename={import.meta.env.BASE_URL}>
       <div className="min-h-screen bg-gray-50">
         <Navigation />
         <Routes>
