@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Save, RotateCcw } from 'lucide-react';
 import {
   preferencesStore,
@@ -22,6 +22,7 @@ export function Settings() {
   const [avatarUrl, setAvatarUrl] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [hasRequestedPreview, setHasRequestedPreview] = useState(false);
 
   const GENDER_OPTIONS = [
     { value: 'woman', label: 'Woman' },
@@ -37,10 +38,6 @@ export function Settings() {
     { value: 'bald', label: 'Bald/Shaved' },
   ] as const;
 
-  useEffect(() => {
-    void generatePreviewAvatar(preferencesStore.getPreferences());
-  }, []);
-
   const generatePreviewAvatar = async (prefs: UserPreferences) => {
     setIsGenerating(true);
     try {
@@ -48,6 +45,7 @@ export function Settings() {
         preferences: prefs,
         weatherContext: NEUTRAL_WEATHER,
         horizon: 'now',
+        allowFallback: false,
       });
       setAvatarUrl(url);
     } catch (error) {
@@ -61,18 +59,22 @@ export function Settings() {
     preferencesStore.savePreferences(preferences);
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 3000);
+    setHasRequestedPreview(true);
     generatePreviewAvatar(preferences);
   };
 
   const handleReset = () => {
     setPreferences(DEFAULT_PREFERENCES);
     preferencesStore.resetToDefaults();
-    generatePreviewAvatar(DEFAULT_PREFERENCES);
+    setAvatarUrl('');
+    setHasRequestedPreview(false);
   };
 
   const handlePreferenceChange = <K extends keyof UserPreferences>(key: K, value: UserPreferences[K]) => {
     setPreferences((prev) => ({ ...prev, [key]: value }));
   };
+
+  const showPreviewPanel = hasRequestedPreview;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
@@ -84,7 +86,9 @@ export function Settings() {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div
+          className={`grid grid-cols-1 ${showPreviewPanel ? 'lg:grid-cols-2' : 'lg:grid-cols-1'} gap-8`}
+        >
           <div className="bg-white rounded-2xl shadow-lg p-8">
             <h2 className="text-2xl font-bold text-gray-900 mb-6">Customize Your Avatar</h2>
 
@@ -245,48 +249,56 @@ export function Settings() {
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl shadow-lg p-8">
-            <h2 className="text-2xl font-bold text-gray-900 mb-6">Avatar Preview</h2>
+          {showPreviewPanel && (
+            <div className="bg-white rounded-2xl shadow-lg p-8">
+              <h2 className="text-2xl font-bold text-gray-900 mb-6">Avatar Preview</h2>
 
-            <div className="relative">
-              {isGenerating ? (
-                <div className="aspect-[2/3] bg-gray-100 rounded-xl flex items-center justify-center">
-                  <div className="text-center">
-                    <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-                    <p className="text-gray-600 font-medium">Generating your avatar...</p>
+              <div className="relative">
+                {isGenerating ? (
+                  <div className="aspect-[2/3] bg-gray-100 rounded-xl flex items-center justify-center">
+                    <div className="text-center">
+                      <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                      <p className="text-gray-600 font-medium">Generating your avatar...</p>
+                    </div>
                   </div>
-                </div>
-              ) : (
-                <div className="aspect-[2/3] bg-gray-100 rounded-xl overflow-hidden">
-                  <img
-                    src={avatarUrl}
-                    alt="Avatar preview"
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-              )}
+                ) : avatarUrl ? (
+                  <div className="aspect-[2/3] bg-gray-100 rounded-xl overflow-hidden">
+                    <img
+                      src={avatarUrl}
+                      alt="Avatar preview"
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                ) : (
+                  <div className="aspect-[2/3] bg-gray-100 rounded-xl flex items-center justify-center">
+                    <p className="text-gray-600 font-medium text-center px-4">
+                      Avatar preview will appear here after it is successfully generated with Gemini.
+                    </p>
+                  </div>
+                )}
 
-              <button
-                onClick={() => generatePreviewAvatar(preferences)}
-                disabled={isGenerating}
-                className="mt-4 w-full bg-gray-100 hover:bg-gray-200 disabled:bg-gray-50 text-gray-700 px-4 py-3 rounded-lg font-semibold transition-colors disabled:cursor-not-allowed"
-              >
-                {isGenerating ? 'Generating...' : 'Regenerate Preview'}
-              </button>
-            </div>
+                <button
+                  onClick={() => generatePreviewAvatar(preferences)}
+                  disabled={isGenerating}
+                  className="mt-4 w-full bg-gray-100 hover:bg-gray-200 disabled:bg-gray-50 text-gray-700 px-4 py-3 rounded-lg font-semibold transition-colors disabled:cursor-not-allowed"
+                >
+                  {isGenerating ? 'Generating...' : 'Regenerate Preview'}
+                </button>
+              </div>
 
-            <div className="mt-6 p-4 bg-blue-50 rounded-lg">
-              <h3 className="font-semibold text-blue-900 mb-2">About Your Avatar</h3>
-              <p className="text-sm text-blue-700 mb-2">
-                Your personalized avatar will adapt to current weather conditions when you use the planner.
-                The outfit shown will change based on temperature, precipitation, and time of day.
-              </p>
-              <p className="text-xs text-blue-600">
-                The app attempts to use AI image generation. If unavailable, it displays a styled avatar
-                that reflects your preferences and weather conditions. Check the browser console for API status.
-              </p>
+              <div className="mt-6 p-4 bg-blue-50 rounded-lg">
+                <h3 className="font-semibold text-blue-900 mb-2">About Your Avatar</h3>
+                <p className="text-sm text-blue-700 mb-2">
+                  Your personalized avatar will adapt to current weather conditions when you use the planner.
+                  The outfit shown will change based on temperature, precipitation, and time of day.
+                </p>
+                <p className="text-xs text-blue-600">
+                  The app attempts to use AI image generation with Gemini. If image generation is unavailable, the
+                  settings page will hide the preview until Gemini is available again.
+                </p>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
     </div>

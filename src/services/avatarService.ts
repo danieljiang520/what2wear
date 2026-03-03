@@ -15,6 +15,7 @@ export interface AvatarGenerationParams {
   preferences: UserPreferences;
   weatherContext: WeatherContext;
   horizon: 'now' | 'today' | 'tonight' | 'tomorrow';
+  allowFallback?: boolean;
 }
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
@@ -25,8 +26,9 @@ class AvatarService {
   private readonly GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
 
   private generateCacheKey(params: AvatarGenerationParams): string {
-    const { preferences, weatherContext, horizon } = params;
-    return `${preferences.gender}-${preferences.hairLength}-${preferences.skinTone}-${preferences.clothingStyle}-${preferences.fashionCountry}-${weatherContext.temperature}-${weatherContext.condition}-${weatherContext.timeOfDay}-${weatherContext.cityName || 'unknown'}-${horizon}`;
+    const { preferences, weatherContext, horizon, allowFallback } = params;
+    const fallbackFlag = allowFallback === false ? 'no-fallback' : 'fallback-ok';
+    return `${preferences.gender}-${preferences.hairLength}-${preferences.skinTone}-${preferences.clothingStyle}-${preferences.fashionCountry}-${weatherContext.temperature}-${weatherContext.condition}-${weatherContext.timeOfDay}-${weatherContext.cityName || 'unknown'}-${horizon}-${fallbackFlag}`;
   }
 
   private buildPrompt(params: AvatarGenerationParams): string {
@@ -85,6 +87,9 @@ class AvatarService {
     }
 
     if (!SUPABASE_URL && !this.GEMINI_API_KEY) {
+      if (params.allowFallback === false) {
+        throw new Error('Gemini image generation is not configured. No fallback avatar is allowed for this request.');
+      }
       const fallbackUrl = this.getStyledFallbackAvatar(params);
       this.cache.set(cacheKey, fallbackUrl);
       return fallbackUrl;
@@ -162,6 +167,10 @@ class AvatarService {
       console.log('Full response:', JSON.stringify(data, null, 2));
       throw new Error('No image data returned from Gemini API. Check console for details.');
     } catch (error) {
+      if (params.allowFallback === false) {
+        console.error('Avatar generation failed and fallback is disabled:', error);
+        throw error instanceof Error ? error : new Error('Avatar generation failed with unknown error');
+      }
       console.error('Avatar generation failed, using styled fallback:', error);
       const fallbackUrl = this.getStyledFallbackAvatar(params);
       this.cache.set(cacheKey, fallbackUrl);
