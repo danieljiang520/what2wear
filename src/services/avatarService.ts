@@ -85,73 +85,88 @@ class AvatarService {
     }
 
     if (!SUPABASE_URL && !this.GEMINI_API_KEY) {
-      throw new Error(
-        'Configure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY for avatar generation, or VITE_GEMINI_API_KEY for local dev.'
-      );
+      const fallbackUrl = this.getStyledFallbackAvatar(params);
+      this.cache.set(cacheKey, fallbackUrl);
+      return fallbackUrl;
     }
 
-    const prompt = this.buildPrompt(params);
-    console.log('Generating avatar with Gemini 2.5 Flash Image...');
+    try {
+      const prompt = this.buildPrompt(params);
+      console.log('Generating avatar with Gemini 2.5 Flash Image...');
 
-    const body = {
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: {
-        responseModalities: ['IMAGE'],
-        imageConfig: { aspectRatio: '3:4' },
-      },
-    };
-
-    let response: Response;
-    if (SUPABASE_URL) {
-      response = await fetch(`${SUPABASE_URL}/functions/v1/gemini-avatar`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(SUPABASE_ANON_KEY && { Authorization: `Bearer ${SUPABASE_ANON_KEY}` }),
+      const body = {
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          responseModalities: ['IMAGE'],
+          imageConfig: { aspectRatio: '3:4' },
         },
-        body: JSON.stringify(body),
-      });
-    } else {
-      response = await fetch(
-        'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent',
-        {
+      };
+
+      let response: Response;
+      if (SUPABASE_URL) {
+        response = await fetch(`${SUPABASE_URL}/functions/v1/gemini-avatar`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'x-goog-api-key': this.GEMINI_API_KEY,
+            ...(SUPABASE_ANON_KEY && { Authorization: `Bearer ${SUPABASE_ANON_KEY}` }),
           },
           body: JSON.stringify(body),
-        }
-      );
-    }
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      if (response.status === 401 && SUPABASE_URL) {
-        throw new Error(
-          `Supabase returned 401 (Invalid JWT). Check that VITE_SUPABASE_ANON_KEY is set and matches your project's anon key, or deploy the function with: supabase functions deploy gemini-avatar --no-verify-jwt`
+        });
+      } else {
+        response = await fetch(
+          'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent',
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-goog-api-key': this.GEMINI_API_KEY,
+            },
+            body: JSON.stringify(body),
+          }
         );
       }
-      throw new Error(`Avatar API returned ${response.status}: ${errorText}`);
-    }
 
-    const data = await response.json();
-    console.log('📦 Gemini API response received');
+      if (!response.ok) {
+        const errorText = await response.text();
+        if (response.status === 401 && SUPABASE_URL) {
+          throw new Error(
+            `Supabase returned 401 (Invalid JWT). Check that VITE_SUPABASE_ANON_KEY is set and matches your project's anon key, or deploy the function with: supabase functions deploy gemini-avatar --no-verify-jwt`
+          );
+        }
+        if (response.status === 429) {
+          const limitZero = /limit:\s*0/.test(errorText);
+          throw new Error(
+            limitZero
+              ? "Gemini image generation has no free-tier quota (limit: 0). Enable billing in Google AI Studio or use a key with image-generation access. See https://ai.google.dev/gemini-api/docs/rate-limits"
+              : `Gemini rate limit (429). Try again in a minute. Details: ${errorText.slice(0, 200)}`
+          );
+        }
+        throw new Error(`Avatar API returned ${response.status}: ${errorText}`);
+      }
 
-    if (data.candidates && data.candidates[0]?.content?.parts) {
-      for (const part of data.candidates[0].content.parts) {
-        if (part.inlineData && part.inlineData.data) {
-          const imageUrl = `data:image/png;base64,${part.inlineData.data}`;
-          this.cache.set(cacheKey, imageUrl);
-          console.log('✅ Avatar generated successfully!');
-          return imageUrl;
+      const data = await response.json();
+      console.log('📦 Gemini API response received');
+
+      if (data.candidates && data.candidates[0]?.content?.parts) {
+        for (const part of data.candidates[0].content.parts) {
+          if (part.inlineData && part.inlineData.data) {
+            const imageUrl = `data:image/png;base64,${part.inlineData.data}`;
+            this.cache.set(cacheKey, imageUrl);
+            console.log('✅ Avatar generated successfully!');
+            return imageUrl;
+          }
         }
       }
-    }
 
-    console.error('❌ No image data in API response');
-    console.log('Full response:', JSON.stringify(data, null, 2));
-    throw new Error('No image data returned from Gemini API. Check console for details.');
+      console.error('❌ No image data in API response');
+      console.log('Full response:', JSON.stringify(data, null, 2));
+      throw new Error('No image data returned from Gemini API. Check console for details.');
+    } catch (error) {
+      console.error('Avatar generation failed, using styled fallback:', error);
+      const fallbackUrl = this.getStyledFallbackAvatar(params);
+      this.cache.set(cacheKey, fallbackUrl);
+      return fallbackUrl;
+    }
   }
 
   private getStyledFallbackAvatar(params: AvatarGenerationParams): string {
@@ -228,25 +243,6 @@ class AvatarService {
         </text>
       </svg>
     `);
-  }
-
-  private getFallbackAvatar(): string {
-    return this.getStyledFallbackAvatar({
-      preferences: {
-        gender: 'prefer-not-to-say',
-        skinTone: 'medium',
-        hairLength: 'medium',
-        clothingStyle: 'casual',
-        fashionCountry: 'United States',
-      },
-      weatherContext: {
-        temperature: 'mild',
-        condition: 'clear',
-        timeOfDay: 'day',
-        season: 'spring',
-      },
-      horizon: 'now',
-    });
   }
 
   clearCache(): void {

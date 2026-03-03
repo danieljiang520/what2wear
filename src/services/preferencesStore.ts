@@ -4,6 +4,7 @@ export interface UserPreferences {
   hairLength: 'short' | 'medium' | 'long' | 'bald';
   clothingStyle: string;
   fashionCountry: string;
+  autoUseCurrentLocationOnLoad: boolean;
 }
 
 export const DEFAULT_PREFERENCES: UserPreferences = {
@@ -12,6 +13,7 @@ export const DEFAULT_PREFERENCES: UserPreferences = {
   hairLength: 'medium',
   clothingStyle: 'casual',
   fashionCountry: 'United States',
+  autoUseCurrentLocationOnLoad: false,
 };
 
 const STORAGE_KEY = 'weatherfit-preferences';

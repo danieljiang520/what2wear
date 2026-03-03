@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Cloud,
   CloudRain,
@@ -9,7 +9,6 @@ import {
   AlertTriangle,
   Moon,
   Sunrise,
-  Sunset,
   Clock,
   Calendar,
   MapPin,
@@ -33,11 +32,50 @@ export function Planner() {
   const [isGettingLocation, setIsGettingLocation] = useState(false);
   const heroRef = useRef<HTMLDivElement>(null);
 
+  const showRightPanel = Boolean(avatarUrl);
+
   const scrollToHero = () => {
     heroRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const handleUseCurrentLocation = () => {
+  const handleLocationSelect = useCallback(async (location: LocationSuggestion) => {
+    setSelectedLocation(location);
+    setAvatarUrl('');
+    setIsLoading(true);
+    setError(null);
+    setIsGeneratingAvatar(false);
+
+    try {
+      const [forecastData, hourlyData] = await Promise.all([
+        weatherService.getForecast(location.latitude, location.longitude),
+        weatherService.getHourlyForecast(location.latitude, location.longitude),
+      ]);
+
+      setForecast(forecastData);
+      setHourlyForecast(hourlyData);
+
+      const cityDisplayName = location.displayName || location.name;
+      const weatherContext = weatherService.getWeatherContext(forecastData, hourlyData, cityDisplayName);
+      const preferences = preferencesStore.getPreferences();
+
+      setIsGeneratingAvatar(true);
+      const avatarImageUrl = await avatarService.generateAvatarImage({
+        preferences,
+        weatherContext,
+        horizon: 'now',
+      });
+      setAvatarUrl(avatarImageUrl);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
+      console.error('Weather fetch error:', err);
+      setError(`Unable to fetch weather data: ${errorMessage}`);
+    } finally {
+      setIsGeneratingAvatar(false);
+      setIsLoading(false);
+    }
+  }, []);
+
+  const handleUseCurrentLocation = useCallback(() => {
     if (!navigator.geolocation) {
       setError('Geolocation is not supported by your browser');
       return;
@@ -67,42 +105,19 @@ export function Planner() {
         setIsGettingLocation(false);
       }
     );
-  };
+  }, [handleLocationSelect]);
 
-  const handleLocationSelect = async (location: LocationSuggestion) => {
-    setSelectedLocation(location);
-    setIsLoading(true);
-    setError(null);
+  useEffect(() => {
+    const { autoUseCurrentLocationOnLoad } = preferencesStore.getPreferences();
+    if (!autoUseCurrentLocationOnLoad) return;
+    if (!navigator.geolocation) return;
 
-    try {
-      const [forecastData, hourlyData] = await Promise.all([
-        weatherService.getForecast(location.latitude, location.longitude),
-        weatherService.getHourlyForecast(location.latitude, location.longitude),
-      ]);
+    const sessionKey = 'weatherfit-autolocate-ran';
+    if (sessionStorage.getItem(sessionKey) === '1') return;
 
-      setForecast(forecastData);
-      setHourlyForecast(hourlyData);
-
-      const cityDisplayName = location.displayName || location.name;
-      const weatherContext = weatherService.getWeatherContext(forecastData, hourlyData, cityDisplayName);
-      const preferences = preferencesStore.getPreferences();
-
-      setIsGeneratingAvatar(true);
-      const avatarImageUrl = await avatarService.generateAvatarImage({
-        preferences,
-        weatherContext,
-        horizon: 'now',
-      });
-      setAvatarUrl(avatarImageUrl);
-      setIsGeneratingAvatar(false);
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
-      console.error('Weather fetch error:', err);
-      setError(`Unable to fetch weather data: ${errorMessage}`);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+    sessionStorage.setItem(sessionKey, '1');
+    handleUseCurrentLocation();
+  }, [handleUseCurrentLocation]);
 
   const getWeatherIcon = (shortForecast: string, isDaytime: boolean = true) => {
     const forecast = shortForecast.toLowerCase();
@@ -177,7 +192,9 @@ export function Planner() {
     <div className="min-h-screen">
       <div ref={heroRef} className={`bg-gradient-to-br ${getDynamicBackground()} transition-colors duration-1000`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+          <div
+            className={`grid grid-cols-1 ${showRightPanel ? 'lg:grid-cols-2' : 'lg:grid-cols-1'} gap-12 items-center`}
+          >
             <div>
               <h1 className={`text-5xl lg:text-6xl font-bold mb-4 ${currentCondition && !currentCondition.isDaytime ? 'text-white' : 'text-gray-900'}`}>
                 Dress smarter with weather-informed outfits
@@ -206,6 +223,15 @@ export function Planner() {
                 </div>
               </div>
 
+              {(isLoading || isGeneratingAvatar) && (
+                <div className={`flex items-center gap-3 mb-4 ${currentCondition && !currentCondition.isDaytime ? 'text-gray-100' : 'text-gray-700'}`}>
+                  <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  <span className="font-medium">
+                    {isGeneratingAvatar ? 'Generating your avatar...' : 'Loading weather data...'}
+                  </span>
+                </div>
+              )}
+
               {selectedLocation && (
                 <div className={`flex items-center gap-2 mb-4 ${currentCondition && !currentCondition.isDaytime ? 'text-gray-100' : 'text-gray-700'}`}>
                   <MapPin className="w-5 h-5" />
@@ -223,84 +249,48 @@ export function Planner() {
               )}
             </div>
 
-            <div>
-              {isLoading ? (
-                <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-2xl p-8">
-                  <div className="h-96 flex items-center justify-center">
-                    <div className="text-center">
-                      <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-                      <p className="text-gray-600 font-medium">Loading weather data...</p>
+            {showRightPanel && currentCondition && (
+              <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-2xl overflow-hidden">
+                <div className="relative aspect-[2/3] bg-gradient-to-br from-blue-50 to-purple-50">
+                  <img src={avatarUrl} alt="Weather avatar" className="w-full h-full object-cover" />
+                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-4">
+                    <div className="text-white">
+                      <div className="flex items-center gap-2 mb-1">
+                        {getWeatherIcon(currentCondition.shortForecast, currentCondition.isDaytime)}
+                        <span className="text-3xl font-bold">
+                          {currentCondition.temperature}°{currentCondition.temperatureUnit}
+                        </span>
+                      </div>
+                      <p className="text-sm">{currentCondition.shortForecast}</p>
                     </div>
                   </div>
                 </div>
-              ) : currentCondition ? (
-                <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-2xl overflow-hidden">
-                  <div className="relative aspect-[2/3] bg-gradient-to-br from-blue-50 to-purple-50">
-                    {isGeneratingAvatar ? (
-                      <div className="h-full flex items-center justify-center">
-                        <div className="text-center">
-                          <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-                          <p className="text-gray-600 text-sm">Generating your avatar...</p>
-                        </div>
-                      </div>
-                    ) : avatarUrl ? (
-                      <img src={avatarUrl} alt="Weather avatar" className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="h-full flex items-center justify-center">
-                        <div className="text-gray-400 text-center">
-                          <Cloud className="w-16 h-16 mx-auto mb-2" />
-                          <p>Avatar preview</p>
-                        </div>
-                      </div>
-                    )}
-                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-4">
-                      <div className="text-white">
-                        <div className="flex items-center gap-2 mb-1">
-                          {getWeatherIcon(currentCondition.shortForecast, currentCondition.isDaytime)}
-                          <span className="text-3xl font-bold">
-                            {currentCondition.temperature}°{currentCondition.temperatureUnit}
+
+                <div className="grid grid-cols-2 gap-3 p-4">
+                  {[
+                    { label: 'Now', period: currentCondition },
+                    { label: 'Today', period: todayPeriods[1] || todayPeriods[0] },
+                    { label: 'Tonight', period: tonightPeriod },
+                    { label: 'Tomorrow', period: tomorrowPeriod },
+                  ].map((item, idx) => (
+                    item.period && (
+                      <div key={idx} className="bg-gray-50 rounded-lg p-3">
+                        <div className="text-xs font-semibold text-gray-500 mb-1">{item.label}</div>
+                        <div className="flex items-center gap-2">
+                          {getWeatherIcon(item.period.shortForecast, item.period.isDaytime)}
+                          <span className="font-bold text-lg">
+                            {item.period.temperature}°
                           </span>
                         </div>
-                        <p className="text-sm">{currentCondition.shortForecast}</p>
+                        <p className="text-xs text-gray-600 mt-1 line-clamp-2">
+                          {getOutfitSuggestion(item.period)}
+                        </p>
                       </div>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3 p-4">
-                    {[
-                      { label: 'Now', period: currentCondition },
-                      { label: 'Today', period: todayPeriods[1] || todayPeriods[0] },
-                      { label: 'Tonight', period: tonightPeriod },
-                      { label: 'Tomorrow', period: tomorrowPeriod },
-                    ].map((item, idx) => (
-                      item.period && (
-                        <div key={idx} className="bg-gray-50 rounded-lg p-3">
-                          <div className="text-xs font-semibold text-gray-500 mb-1">{item.label}</div>
-                          <div className="flex items-center gap-2">
-                            {getWeatherIcon(item.period.shortForecast, item.period.isDaytime)}
-                            <span className="font-bold text-lg">
-                              {item.period.temperature}°
-                            </span>
-                          </div>
-                          <p className="text-xs text-gray-600 mt-1 line-clamp-2">
-                            {getOutfitSuggestion(item.period)}
-                          </p>
-                        </div>
-                      )
-                    ))}
-                  </div>
+                    )
+                  ))}
                 </div>
-              ) : (
-                <div className="bg-white/90 backdrop-blur-sm rounded-2xl shadow-2xl p-8">
-                  <div className="aspect-[2/3] flex items-center justify-center text-center">
-                    <div>
-                      <Cloud className="w-20 h-20 text-gray-300 mx-auto mb-4" />
-                      <p className="text-gray-500 text-lg">Search for a location to get started</p>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

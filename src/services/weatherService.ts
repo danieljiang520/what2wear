@@ -56,13 +56,39 @@ interface PointsResponse {
   };
 }
 
+interface ForecastResponse {
+  properties: {
+    periods: ForecastPeriod[];
+  };
+}
+
+interface HourlyForecastResponse {
+  properties: {
+    periods: HourlyForecast[];
+  };
+}
+
+interface AlertsResponse {
+  features: Array<{
+    id: string;
+    properties: {
+      event: string;
+      headline: string;
+      description: string;
+      severity: string;
+      urgency: string;
+      certainty: string;
+    };
+  }>;
+}
+
 class WeatherService {
   private static readonly USER_AGENT =
     'What2Wear/1.0 (https://danieljiang520.github.io/what2wear/)';
-  private forecastCache = new Map<string, { data: any; timestamp: number }>();
+  private forecastCache = new Map<string, { data: unknown; timestamp: number }>();
   private cacheDuration = 10 * 60 * 1000;
 
-  private async fetchWithUserAgent(url: string) {
+  private async fetchWithUserAgent<T>(url: string): Promise<T> {
     const nwsUrl = url.startsWith('https://api.weather.gov')
       ? url
       : `https://api.weather.gov${url}`;
@@ -79,45 +105,45 @@ class WeatherService {
       throw new Error(`Weather API error: ${response.status} - ${errorText}`);
     }
 
-    return response.json();
+    return (await response.json()) as T;
   }
 
   private getCacheKey(lat: number, lon: number, type: string): string {
     return `${lat.toFixed(4)},${lon.toFixed(4)}-${type}`;
   }
 
-  private getFromCache(key: string) {
+  private getFromCache<T>(key: string): T | null {
     const cached = this.forecastCache.get(key);
     if (cached && Date.now() - cached.timestamp < this.cacheDuration) {
-      return cached.data;
+      return cached.data as T;
     }
     return null;
   }
 
-  private setCache(key: string, data: any) {
+  private setCache<T>(key: string, data: T) {
     this.forecastCache.set(key, { data, timestamp: Date.now() });
   }
 
   async getPointData(latitude: number, longitude: number): Promise<PointsResponse> {
     const cacheKey = this.getCacheKey(latitude, longitude, 'points');
-    const cached = this.getFromCache(cacheKey);
+    const cached = this.getFromCache<PointsResponse>(cacheKey);
     if (cached) return cached;
 
     const url = `https://api.weather.gov/points/${latitude.toFixed(4)},${longitude.toFixed(4)}`;
-    const data = await this.fetchWithUserAgent(url);
+    const data = await this.fetchWithUserAgent<PointsResponse>(url);
     this.setCache(cacheKey, data);
     return data;
   }
 
   async getForecast(latitude: number, longitude: number): Promise<ForecastPeriod[]> {
     const cacheKey = this.getCacheKey(latitude, longitude, 'forecast');
-    const cached = this.getFromCache(cacheKey);
+    const cached = this.getFromCache<ForecastPeriod[]>(cacheKey);
     if (cached) return cached;
 
     const pointData = await this.getPointData(latitude, longitude);
     const forecastUrl = pointData.properties.forecast;
-    const data = await this.fetchWithUserAgent(forecastUrl);
-    const periods = data.properties.periods as ForecastPeriod[];
+    const data = await this.fetchWithUserAgent<ForecastResponse>(forecastUrl);
+    const periods = data.properties.periods;
 
     this.setCache(cacheKey, periods);
     return periods;
@@ -125,13 +151,13 @@ class WeatherService {
 
   async getHourlyForecast(latitude: number, longitude: number): Promise<HourlyForecast[]> {
     const cacheKey = this.getCacheKey(latitude, longitude, 'hourly');
-    const cached = this.getFromCache(cacheKey);
+    const cached = this.getFromCache<HourlyForecast[]>(cacheKey);
     if (cached) return cached;
 
     const pointData = await this.getPointData(latitude, longitude);
     const hourlyUrl = pointData.properties.forecastHourly;
-    const data = await this.fetchWithUserAgent(hourlyUrl);
-    const periods = data.properties.periods as HourlyForecast[];
+    const data = await this.fetchWithUserAgent<HourlyForecastResponse>(hourlyUrl);
+    const periods = data.properties.periods;
 
     this.setCache(cacheKey, periods);
     return periods;
@@ -140,8 +166,8 @@ class WeatherService {
   async getAlerts(state: string): Promise<Alert[]> {
     try {
       const url = `https://api.weather.gov/alerts/active?area=${state}`;
-      const data = await this.fetchWithUserAgent(url);
-      return data.features.map((feature: any) => ({
+      const data = await this.fetchWithUserAgent<AlertsResponse>(url);
+      return data.features.map((feature) => ({
         id: feature.id,
         event: feature.properties.event,
         headline: feature.properties.headline,
@@ -186,7 +212,7 @@ class WeatherService {
     return 'No precipitation expected in the next hour';
   }
 
-  getWeatherContext(forecast: ForecastPeriod[], hourlyForecast: HourlyForecast[], cityName?: string) {
+  getWeatherContext(forecast: ForecastPeriod[], _hourlyForecast: HourlyForecast[], cityName?: string) {
     if (!forecast || forecast.length === 0) {
       return {
         temperature: 'mild',

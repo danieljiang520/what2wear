@@ -10,29 +10,43 @@ import {
 } from '../services/preferencesStore';
 import { avatarService, WeatherContext } from '../services/avatarService';
 
+const NEUTRAL_WEATHER: WeatherContext = {
+  temperature: 'mild',
+  condition: 'clear',
+  timeOfDay: 'day',
+  season: 'spring',
+};
+
 export function Settings() {
   const [preferences, setPreferences] = useState<UserPreferences>(preferencesStore.getPreferences());
   const [avatarUrl, setAvatarUrl] = useState<string>('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
-  const neutralWeather: WeatherContext = {
-    temperature: 'mild',
-    condition: 'clear',
-    timeOfDay: 'day',
-    season: 'spring',
-  };
+  const GENDER_OPTIONS = [
+    { value: 'woman', label: 'Woman' },
+    { value: 'man', label: 'Man' },
+    { value: 'non-binary', label: 'Non-binary' },
+    { value: 'prefer-not-to-say', label: 'Prefer not to say' },
+  ] as const;
+
+  const HAIR_LENGTH_OPTIONS = [
+    { value: 'short', label: 'Short' },
+    { value: 'medium', label: 'Medium' },
+    { value: 'long', label: 'Long' },
+    { value: 'bald', label: 'Bald/Shaved' },
+  ] as const;
 
   useEffect(() => {
-    generatePreviewAvatar();
+    void generatePreviewAvatar(preferencesStore.getPreferences());
   }, []);
 
-  const generatePreviewAvatar = async () => {
+  const generatePreviewAvatar = async (prefs: UserPreferences) => {
     setIsGenerating(true);
     try {
       const url = await avatarService.generateAvatarImage({
-        preferences,
-        weatherContext: neutralWeather,
+        preferences: prefs,
+        weatherContext: NEUTRAL_WEATHER,
         horizon: 'now',
       });
       setAvatarUrl(url);
@@ -47,16 +61,16 @@ export function Settings() {
     preferencesStore.savePreferences(preferences);
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 3000);
-    generatePreviewAvatar();
+    generatePreviewAvatar(preferences);
   };
 
   const handleReset = () => {
     setPreferences(DEFAULT_PREFERENCES);
     preferencesStore.resetToDefaults();
-    generatePreviewAvatar();
+    generatePreviewAvatar(DEFAULT_PREFERENCES);
   };
 
-  const handlePreferenceChange = (key: keyof UserPreferences, value: string) => {
+  const handlePreferenceChange = <K extends keyof UserPreferences>(key: K, value: UserPreferences[K]) => {
     setPreferences((prev) => ({ ...prev, [key]: value }));
   };
 
@@ -78,12 +92,7 @@ export function Settings() {
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-3">Gender</label>
                 <div className="grid grid-cols-2 gap-3">
-                  {[
-                    { value: 'woman', label: 'Woman' },
-                    { value: 'man', label: 'Man' },
-                    { value: 'non-binary', label: 'Non-binary' },
-                    { value: 'prefer-not-to-say', label: 'Prefer not to say' },
-                  ].map((option) => (
+                  {GENDER_OPTIONS.map((option) => (
                     <button
                       key={option.value}
                       onClick={() => handlePreferenceChange('gender', option.value)}
@@ -132,12 +141,7 @@ export function Settings() {
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-3">Hair Length</label>
                 <div className="grid grid-cols-2 gap-3">
-                  {[
-                    { value: 'short', label: 'Short' },
-                    { value: 'medium', label: 'Medium' },
-                    { value: 'long', label: 'Long' },
-                    { value: 'bald', label: 'Bald/Shaved' },
-                  ].map((option) => (
+                  {HAIR_LENGTH_OPTIONS.map((option) => (
                     <button
                       key={option.value}
                       onClick={() => handlePreferenceChange('hairLength', option.value)}
@@ -183,6 +187,37 @@ export function Settings() {
                     </option>
                   ))}
                 </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-3">
+                  Startup behavior
+                </label>
+                <div className="flex items-center justify-between gap-4 rounded-lg border border-gray-200 px-4 py-3">
+                  <div>
+                    <div className="font-medium text-gray-900">Use current location on startup</div>
+                    <div className="text-sm text-gray-600">
+                      When enabled, the planner will request your location automatically when you land on the site.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handlePreferenceChange('autoUseCurrentLocationOnLoad', !preferences.autoUseCurrentLocationOnLoad)
+                    }
+                    className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors ${
+                      preferences.autoUseCurrentLocationOnLoad ? 'bg-blue-600' : 'bg-gray-300'
+                    }`}
+                    aria-pressed={preferences.autoUseCurrentLocationOnLoad}
+                    aria-label="Use current location on startup"
+                  >
+                    <span
+                      className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
+                        preferences.autoUseCurrentLocationOnLoad ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
+                  </button>
+                </div>
               </div>
 
               <div className="flex gap-3 pt-4">
@@ -232,7 +267,7 @@ export function Settings() {
               )}
 
               <button
-                onClick={generatePreviewAvatar}
+                onClick={() => generatePreviewAvatar(preferences)}
                 disabled={isGenerating}
                 className="mt-4 w-full bg-gray-100 hover:bg-gray-200 disabled:bg-gray-50 text-gray-700 px-4 py-3 rounded-lg font-semibold transition-colors disabled:cursor-not-allowed"
               >
