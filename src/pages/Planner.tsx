@@ -67,8 +67,8 @@ export function Planner() {
       setAvatarUrl(avatarImageUrl);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
-      console.error('Weather fetch error:', err);
-      setError(`Unable to fetch weather data: ${errorMessage}`);
+      console.error('Planner error:', err);
+      setError(errorMessage);
     } finally {
       setIsGeneratingAvatar(false);
       setIsLoading(false);

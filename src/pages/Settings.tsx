@@ -45,11 +45,11 @@ export function Settings() {
         preferences: prefs,
         weatherContext: NEUTRAL_WEATHER,
         horizon: 'now',
-        allowFallback: false,
       });
       setAvatarUrl(url);
     } catch (error) {
       console.error('Failed to generate preview:', error);
+      setAvatarUrl('');
     } finally {
       setIsGenerating(false);
     }

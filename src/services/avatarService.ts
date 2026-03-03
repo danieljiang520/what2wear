@@ -15,7 +15,6 @@ export interface AvatarGenerationParams {
   preferences: UserPreferences;
   weatherContext: WeatherContext;
   horizon: 'now' | 'today' | 'tonight' | 'tomorrow';
-  allowFallback?: boolean;
 }
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
@@ -26,9 +25,8 @@ class AvatarService {
   private readonly GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
 
   private generateCacheKey(params: AvatarGenerationParams): string {
-    const { preferences, weatherContext, horizon, allowFallback } = params;
-    const fallbackFlag = allowFallback === false ? 'no-fallback' : 'fallback-ok';
-    return `${preferences.gender}-${preferences.hairLength}-${preferences.skinTone}-${preferences.clothingStyle}-${preferences.fashionCountry}-${weatherContext.temperature}-${weatherContext.condition}-${weatherContext.timeOfDay}-${weatherContext.cityName || 'unknown'}-${horizon}-${fallbackFlag}`;
+    const { preferences, weatherContext, horizon } = params;
+    return `${preferences.gender}-${preferences.hairLength}-${preferences.skinTone}-${preferences.clothingStyle}-${preferences.fashionCountry}-${weatherContext.temperature}-${weatherContext.condition}-${weatherContext.timeOfDay}-${weatherContext.cityName || 'unknown'}-${horizon}`;
   }
 
   private buildPrompt(params: AvatarGenerationParams): string {
@@ -87,17 +85,14 @@ class AvatarService {
     }
 
     if (!SUPABASE_URL && !this.GEMINI_API_KEY) {
-      if (params.allowFallback === false) {
-        throw new Error('Gemini image generation is not configured. No fallback avatar is allowed for this request.');
-      }
-      const fallbackUrl = this.getStyledFallbackAvatar(params);
-      this.cache.set(cacheKey, fallbackUrl);
-      return fallbackUrl;
+      throw new Error(
+        'Gemini image generation is not configured. Set VITE_SUPABASE_URL with the edge function or VITE_GEMINI_API_KEY to enable avatar generation.'
+      );
     }
 
     try {
       const prompt = this.buildPrompt(params);
-      console.log('Generating avatar with Gemini 2.5 Flash Image...');
+      console.log('Generating avatar with Gemini image model via Gemini API...');
 
       const body = {
         contents: [{ parts: [{ text: prompt }] }],
@@ -167,95 +162,9 @@ class AvatarService {
       console.log('Full response:', JSON.stringify(data, null, 2));
       throw new Error('No image data returned from Gemini API. Check console for details.');
     } catch (error) {
-      if (params.allowFallback === false) {
-        console.error('Avatar generation failed and fallback is disabled:', error);
-        throw error instanceof Error ? error : new Error('Avatar generation failed with unknown error');
-      }
-      console.error('Avatar generation failed, using styled fallback:', error);
-      const fallbackUrl = this.getStyledFallbackAvatar(params);
-      this.cache.set(cacheKey, fallbackUrl);
-      return fallbackUrl;
+      console.error('Avatar generation failed with Gemini:', error);
+      throw error instanceof Error ? error : new Error('Avatar generation failed with unknown error');
     }
-  }
-
-  private getStyledFallbackAvatar(params: AvatarGenerationParams): string {
-    const { preferences, weatherContext } = params;
-
-    const skinToneColors: Record<string, string> = {
-      'very-light': '#fde8d5',
-      'light': '#f3d4ba',
-      'light-medium': '#ddb598',
-      'medium': '#c19376',
-      'tan': '#9d7355',
-      'deep': '#6b4733',
-      'very-deep': '#3d2817',
-    };
-
-    const skinColor = skinToneColors[preferences.skinTone] || '#c19376';
-
-    let bgColor = '#e0f2fe';
-    if (weatherContext.condition === 'rainy') bgColor = '#cbd5e1';
-    else if (weatherContext.condition === 'snowy') bgColor = '#f0f9ff';
-    else if (weatherContext.condition === 'cloudy') bgColor = '#e2e8f0';
-    else if (weatherContext.timeOfDay === 'night') bgColor = '#1e293b';
-
-    const outfitColor = weatherContext.temperature === 'cold' ? '#1e40af' :
-                       weatherContext.temperature === 'hot' ? '#fbbf24' : '#10b981';
-
-    return 'data:image/svg+xml,' + encodeURIComponent(`
-      <svg width="400" height="600" xmlns="http://www.w3.org/2000/svg">
-        <defs>
-          <linearGradient id="bg" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" style="stop-color:${bgColor};stop-opacity:1" />
-            <stop offset="100%" style="stop-color:${bgColor};stop-opacity:0.7" />
-          </linearGradient>
-        </defs>
-        <rect width="400" height="600" fill="url(#bg)"/>
-
-        <!-- Head -->
-        <circle cx="200" cy="140" r="50" fill="${skinColor}"/>
-
-        <!-- Hair -->
-        ${preferences.hairLength !== 'bald' ? `
-          <ellipse cx="200" cy="110" rx="55" ry="${preferences.hairLength === 'long' ? '70' : preferences.hairLength === 'medium' ? '40' : '25'}" fill="#4a4a4a"/>
-        ` : ''}
-
-        <!-- Body/Outfit -->
-        <rect x="150" y="195" width="100" height="140" rx="15" fill="${outfitColor}"/>
-
-        <!-- Arms -->
-        <rect x="130" y="210" width="20" height="100" rx="10" fill="${outfitColor}"/>
-        <rect x="250" y="210" width="20" height="100" rx="10" fill="${outfitColor}"/>
-        <ellipse cx="140" cy="315" rx="12" ry="15" fill="${skinColor}"/>
-        <ellipse cx="260" cy="315" rx="12" ry="15" fill="${skinColor}"/>
-
-        <!-- Legs -->
-        <rect x="170" y="335" width="25" height="110" fill="#2c3e50"/>
-        <rect x="205" y="335" width="25" height="110" fill="#2c3e50"/>
-
-        <!-- Weather indicator -->
-        ${weatherContext.condition === 'rainy' ? `
-          <line x1="100" y1="50" x2="95" y2="70" stroke="#3b82f6" stroke-width="2"/>
-          <line x1="120" y1="60" x2="115" y2="80" stroke="#3b82f6" stroke-width="2"/>
-          <line x1="280" y1="55" x2="275" y2="75" stroke="#3b82f6" stroke-width="2"/>
-        ` : weatherContext.condition === 'sunny' ? `
-          <circle cx="320" cy="80" r="25" fill="#fbbf24" opacity="0.8"/>
-        ` : weatherContext.condition === 'snowy' ? `
-          <circle cx="100" cy="60" r="4" fill="white"/>
-          <circle cx="130" cy="80" r="4" fill="white"/>
-          <circle cx="270" cy="65" r="4" fill="white"/>
-          <circle cx="290" cy="85" r="4" fill="white"/>
-        ` : ''}
-
-        <text x="200" y="560" font-family="Arial, sans-serif" font-size="12" fill="${weatherContext.timeOfDay === 'night' ? '#ffffff' : '#4b5563'}" text-anchor="middle">
-          ${preferences.clothingStyle.charAt(0).toUpperCase() + preferences.clothingStyle.slice(1)} • ${weatherContext.temperature}
-        </text>
-      </svg>
-    `);
-  }
-
-  clearCache(): void {
-    this.cache.clear();
   }
 }
 
