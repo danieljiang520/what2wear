@@ -97,6 +97,42 @@ class GeocodingService {
       };
     });
   }
+
+  async reverseLookup(latitude: number, longitude: number): Promise<LocationSuggestion | null> {
+    const url =
+      `https://nominatim.openstreetmap.org/reverse?` +
+      `lat=${encodeURIComponent(latitude.toString())}` +
+      `&lon=${encodeURIComponent(longitude.toString())}` +
+      `&countrycodes=us&format=jsonv2&addressdetails=1`;
+
+    const response = await fetch(url, {
+      headers: { 'User-Agent': GeocodingService.USER_AGENT },
+    });
+
+    if (!response.ok) {
+      console.error('Nominatim reverse error:', response.status);
+      return null;
+    }
+
+    const result: NominatimResult = await response.json();
+    const addr = result.address;
+    const placeName =
+      addr?.city || addr?.town || addr?.village || addr?.hamlet || addr?.county || result.display_name;
+    const stateAbbr = abbrevState(addr?.state);
+    const displayParts = [placeName];
+    if (stateAbbr) displayParts.push(stateAbbr);
+    const country = addr?.country ?? 'USA';
+    displayParts.push(country);
+
+    return {
+      name: placeName,
+      latitude,
+      longitude,
+      state: stateAbbr,
+      country,
+      displayName: displayParts.join(', '),
+    };
+  }
 }
 
 export const geocodingService = new GeocodingService();

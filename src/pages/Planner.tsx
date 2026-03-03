@@ -16,7 +16,7 @@ import {
   Navigation,
 } from 'lucide-react';
 import { LocationAutocomplete } from '../components/LocationAutocomplete';
-import { LocationSuggestion } from '../services/geocodingService';
+import { LocationSuggestion, geocodingService } from '../services/geocodingService';
 import { weatherService, ForecastPeriod, HourlyForecast } from '../services/weatherService';
 import { avatarService } from '../services/avatarService';
 import { preferencesStore } from '../services/preferencesStore';
@@ -88,13 +88,22 @@ export function Planner() {
       async (position) => {
         const { latitude, longitude } = position.coords;
 
-        const location: LocationSuggestion = {
-          name: 'Current Location',
+        let location: LocationSuggestion = {
+          name: 'Your Current Location',
           latitude,
           longitude,
           country: 'USA',
           displayName: 'Your Current Location',
         };
+
+        try {
+          const resolved = await geocodingService.reverseLookup(latitude, longitude);
+          if (resolved) {
+            location = resolved;
+          }
+        } catch (reverseError) {
+          console.error('Reverse geocoding failed:', reverseError);
+        }
 
         await handleLocationSelect(location);
         setIsGettingLocation(false);
