@@ -57,6 +57,12 @@ Build for production:
 npm run build
 ```
 
+### Deploying to GitHub Pages
+
+1. In your GitHub repo, go to **Settings → Pages → Build and deployment**
+2. Set the **Source** dropdown to **GitHub Actions** (not "Deploy from a branch")
+3. Push to `main` or manually run the "Deploy Vite to GitHub Pages" workflow from the Actions tab
+
 ## Usage
 
 ### Planner Page

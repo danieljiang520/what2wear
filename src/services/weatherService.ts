@@ -57,32 +57,29 @@ interface PointsResponse {
 }
 
 class WeatherService {
+  private static readonly USER_AGENT =
+    'What2Wear/1.0 (https://danieljiang520.github.io/what2wear/)';
   private forecastCache = new Map<string, { data: any; timestamp: number }>();
   private cacheDuration = 10 * 60 * 1000;
 
   private async fetchWithUserAgent(url: string) {
-    const nwsPath = url.replace('https://api.weather.gov', '');
-    const proxyUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/weather-proxy?path=${encodeURIComponent(nwsPath)}`;
+    const nwsUrl = url.startsWith('https://api.weather.gov')
+      ? url
+      : `https://api.weather.gov${url}`;
 
-    console.log('Fetching from proxy:', proxyUrl);
-
-    const response = await fetch(proxyUrl, {
+    const response = await fetch(nwsUrl, {
       headers: {
-        'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+        'User-Agent': WeatherService.USER_AGENT,
+        Accept: 'application/geo+json',
       },
     });
 
-    console.log('Response status:', response.status);
-
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('Weather API error:', response.status, errorText);
       throw new Error(`Weather API error: ${response.status} - ${errorText}`);
     }
 
-    const data = await response.json();
-    console.log('Weather data received:', data);
-    return data;
+    return response.json();
   }
 
   private getCacheKey(lat: number, lon: number, type: string): string {
