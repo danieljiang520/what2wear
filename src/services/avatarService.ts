@@ -21,8 +21,24 @@ const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
 class AvatarService {
-  private cache = new Map<string, string>();
+  private cache = new Map<string, { url: string; createdAt: number }>();
+  private readonly CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
   private readonly GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
+
+  private getFromCache(cacheKey: string): string | null {
+    const entry = this.cache.get(cacheKey);
+    if (!entry) return null;
+
+    const age = Date.now() - entry.createdAt;
+    if (age < this.CACHE_TTL_MS) {
+      console.log('Using cached avatar (fresh)');
+      return entry.url;
+    }
+
+    console.log('Cached avatar expired, evicting');
+    this.cache.delete(cacheKey);
+    return null;
+  }
 
   private generateCacheKey(params: AvatarGenerationParams): string {
     const { preferences, weatherContext, horizon } = params;
@@ -79,9 +95,9 @@ class AvatarService {
   async generateAvatarImage(params: AvatarGenerationParams): Promise<string> {
     const cacheKey = this.generateCacheKey(params);
 
-    if (this.cache.has(cacheKey)) {
-      console.log('Using cached avatar');
-      return this.cache.get(cacheKey)!;
+    const cachedUrl = this.getFromCache(cacheKey);
+    if (cachedUrl) {
+      return cachedUrl;
     }
 
     if (!SUPABASE_URL && !this.GEMINI_API_KEY) {
@@ -151,7 +167,7 @@ class AvatarService {
         for (const part of data.candidates[0].content.parts) {
           if (part.inlineData && part.inlineData.data) {
             const imageUrl = `data:image/png;base64,${part.inlineData.data}`;
-            this.cache.set(cacheKey, imageUrl);
+            this.cache.set(cacheKey, { url: imageUrl, createdAt: Date.now() });
             console.log('✅ Avatar generated successfully!');
             return imageUrl;
           }
