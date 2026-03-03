@@ -37,12 +37,24 @@ To get a Gemini API key:
 3. Create a new API key
 4. Copy the key to your `.env` file
 
+**Avatar generation (recommended: Supabase proxy)**  
+To keep the Gemini API key secure, use the Supabase Edge Function proxy:
+
+1. Deploy the `gemini-avatar` Edge Function: `supabase functions deploy gemini-avatar`
+2. In Supabase Dashboard, go to **Project Settings → Edge Functions → Secrets** and set `GEMINI_API_KEY` to your Gemini API key
+3. In your `.env` (and in your build environment for static deploys like GitHub Pages), set:
+   - `VITE_SUPABASE_URL=https://<your-project-ref>.supabase.co`
+   - `VITE_SUPABASE_ANON_KEY=<your-anon-key>` (from Dashboard → Settings → API)
+
+The frontend will call the proxy instead of Gemini directly; the key never leaves Supabase.
+
+**Local dev without Supabase:**  
+You can still set `VITE_GEMINI_API_KEY` in `.env` and leave `VITE_SUPABASE_URL` unset; the app will call Gemini directly (key is visible in dev only).
+
 **Note on Avatar Generation**:
 - The app uses the Gemini 2.5 Flash Image model (`gemini-2.5-flash-image`) to generate avatars
-- Avatar generation requires a valid Gemini API key with image generation access
 - If the API is unavailable or quota is exceeded, styled SVG fallback avatars will be displayed
 - Fallback avatars are personalized based on your preferences and weather conditions
-- Check the browser console for detailed API status and debugging information
 - The "Regenerate Preview" button in Settings uses the same Gemini API endpoint
 
 ### Running the App

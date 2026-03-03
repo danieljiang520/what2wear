@@ -17,6 +17,9 @@ export interface AvatarGenerationParams {
   horizon: 'now' | 'today' | 'tonight' | 'tomorrow';
 }
 
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || '';
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+
 class AvatarService {
   private cache = new Map<string, string>();
   private readonly GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
@@ -81,42 +84,49 @@ class AvatarService {
       return this.cache.get(cacheKey)!;
     }
 
-    if (!this.GEMINI_API_KEY) {
-      throw new Error('Gemini API key not found. Please add VITE_GEMINI_API_KEY to your .env file');
+    if (!SUPABASE_URL && !this.GEMINI_API_KEY) {
+      throw new Error(
+        'Configure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY for avatar generation, or VITE_GEMINI_API_KEY for local dev.'
+      );
     }
 
     const prompt = this.buildPrompt(params);
-    console.log('🎨 Generating avatar with Gemini 2.5 Flash Image...');
-    console.log('Prompt:', prompt);
+    console.log('Generating avatar with Gemini 2.5 Flash Image...');
 
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent`,
-      {
+    const body = {
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: {
+        responseModalities: ['IMAGE'],
+        imageConfig: { aspectRatio: '3:4' },
+      },
+    };
+
+    let response: Response;
+    if (SUPABASE_URL) {
+      response = await fetch(`${SUPABASE_URL}/functions/v1/gemini-avatar`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-goog-api-key': this.GEMINI_API_KEY,
+          ...(SUPABASE_ANON_KEY && { Authorization: `Bearer ${SUPABASE_ANON_KEY}` }),
         },
-        body: JSON.stringify({
-          contents: [{
-            parts: [{
-              text: prompt
-            }]
-          }],
-          generationConfig: {
-            responseModalities: ['IMAGE'],
-            imageConfig: {
-              aspectRatio: '3:4'
-            }
-          }
-        }),
-      }
-    );
+        body: JSON.stringify(body),
+      });
+    } else {
+      response = await fetch(
+        'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': this.GEMINI_API_KEY,
+          },
+          body: JSON.stringify(body),
+        }
+      );
+    }
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('❌ Gemini API error:', response.status);
-      console.error('Error details:', errorText);
       throw new Error(`Gemini API returned ${response.status}: ${errorText}`);
     }
 
