@@ -1,0 +1,7 @@
+# Supabase project config (used by CLI for deploy/serve).
+# See: https://supabase.com/docs/guides/functions/function-configuration
+
+[functions.gemini-avatar]
+# Allow unauthenticated calls so the frontend can use the proxy without passing the anon key.
+# The Gemini API key stays in Supabase secrets; only the proxy endpoint is public.
+verify_jwt = false

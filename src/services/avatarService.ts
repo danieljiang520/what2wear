@@ -127,7 +127,12 @@ class AvatarService {
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`Gemini API returned ${response.status}: ${errorText}`);
+      if (response.status === 401 && SUPABASE_URL) {
+        throw new Error(
+          `Supabase returned 401 (Invalid JWT). Check that VITE_SUPABASE_ANON_KEY is set and matches your project's anon key, or deploy the function with: supabase functions deploy gemini-avatar --no-verify-jwt`
+        );
+      }
+      throw new Error(`Avatar API returned ${response.status}: ${errorText}`);
     }
 
     const data = await response.json();
